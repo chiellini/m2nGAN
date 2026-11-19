@@ -48,6 +48,25 @@ def save_expression_to_readable_file(name_dictionary_path, embryo_name, running_
     volume_embryo = volume_embryo.loc[:, ((volume_embryo != 0) & (~np.isnan(volume_embryo))).any(axis=0)]
     volume_embryo.to_csv(os.path.join(stat_file_root, embryo_name + '_cellwise_expression.csv'))
 
+    # ---------------------assemble surface area expression---------------------------------
+    surface_embryo = pd.DataFrame(
+        np.full(shape=(running_max_time, len(all_names)), fill_value=np.nan, dtype=np.float32),
+        index=range(1, running_max_time + 1), columns=all_names)
+
+    for tp in tqdm(range(1, running_max_time + 1),
+                   desc='assembling surface area of {} result'.format(embryo_name)):
+        path_tmp = os.path.join(stat_file_root, embryo_name)
+        with open(os.path.join(path_tmp, '{}_{}_surfacewise_expression.txt'.format(embryo_name, str(tp).zfill(3))),
+                  'rb') as handle:
+            surfacewise_expression_dict = pickle.load(handle)
+
+        for cell_label_, surface_value in surfacewise_expression_dict.items():
+            cell_name_ = label_name_dict[cell_label_]
+            surface_embryo.loc[tp, cell_name_] = surface_value.astype(np.float32)
+
+    surface_embryo = surface_embryo.loc[:, ((surface_embryo != 0) & (~np.isnan(surface_embryo))).any(axis=0)]
+    surface_embryo.to_csv(os.path.join(stat_file_root, embryo_name + '_surfacewise_expression.csv'))
+
     # ------------contact-----------initialize the contact csv  file----------------------
     # Get tuble lists with elements from the list
 
@@ -212,49 +231,72 @@ def calculate_volume_surface_contactwise_expression(config):
 if __name__ == '__main__':
     # is_generate_cell_wise_gui_data= True # depulicate all raw images and segmented files for ITK-SNAP-CVE software
 
-    # =====================calculate expression volume surface contact=====================================
-    embryo_names = ['200710hmr1plc1p1', '200710hmr1plc1p2', '200710hmr1plc1p3']
+    # # =====================calculate expression volume surface contact=====================================
+    # embryo_names = ['200710hmr1plc1p1', '200710hmr1plc1p2', '200710hmr1plc1p3']
 
-    cell_identity_assigned_path = r'C:\Users\zelinli6\OneDrive - City University of Hong Kong - Student\Documents\06paper TUNETr TMI LSA NC\TUNETr dataset\CTransformer embryos segmentation'
-    cd_file_root_path = r'C:\Users\zelinli6\OneDrive - City University of Hong Kong - Student\Documents\06paper TUNETr TMI LSA NC\Tables\Nuclei_independent_cd_files'
-    name_dictionary_path = r'C:\Users\zelinli6\OneDrive - City University of Hong Kong - Student\Documents\06paper TUNETr TMI LSA NC\Tables\name_dictionary.csv'
-    # cell_fate_dictionary = r'/home/cimda/INNERDisk1/ZELIN_MEMB_DATA/CMap CSahepr 34 packed membrane nucleus/CellFate.xls'
+    # cell_identity_assigned_path = r'C:\Users\zelinli6\OneDrive - City University of Hong Kong - Student\Documents\06paper TUNETr TMI LSA NC\TUNETr dataset\CTransformer embryos segmentation'
+    # cd_file_root_path = r'C:\Users\zelinli6\OneDrive - City University of Hong Kong - Student\Documents\06paper TUNETr TMI LSA NC\Tables\Nuclei_independent_cd_files'
+    # name_dictionary_path = r'C:\Users\zelinli6\OneDrive - City University of Hong Kong - Student\Documents\06paper TUNETr TMI LSA NC\Tables\name_dictionary.csv'
+    # # cell_fate_dictionary = r'/home/cimda/INNERDisk1/ZELIN_MEMB_DATA/CMap CSahepr 34 packed membrane nucleus/CellFate.xls'
 
-    specific_labeling_3D_path = r'E:\ProjectData\MembraneProject\AllRawDataPacked'
+    # specific_labeling_3D_path = r'E:\ProjectData\MembraneProject\AllRawDataPacked'
 
-    stat_path = os.path.join(cell_identity_assigned_path, 'ExpressionStat')
+    # stat_path = os.path.join(cell_identity_assigned_path, 'ExpressionStat')
 
-    label_name_dict = pd.read_csv(name_dictionary_path, index_col=0).to_dict()['0']
-    name_label_dict = {value: key for key, value in label_name_dict.items()}
+    # label_name_dict = pd.read_csv(name_dictionary_path, index_col=0).to_dict()['0']
+    # name_label_dict = {value: key for key, value in label_name_dict.items()}
 
-    for idx, embryo_name in enumerate(embryo_names):
-        this_embryo_segmented_files = sorted(
-            glob(os.path.join(cell_identity_assigned_path, embryo_name, 'SegCell', '*nii.gz')))
-        max_time = len(this_embryo_segmented_files)
+    # for idx, embryo_name in enumerate(embryo_names):
+    #     this_embryo_segmented_files = sorted(
+    #         glob(os.path.join(cell_identity_assigned_path, embryo_name, 'SegCell', '*nii.gz')))
+    #     max_time = len(this_embryo_segmented_files)
 
-        # ==================calculate the cell-wise and contact-wise expression value take long time==================
-        configs = []
+    #     # ==================calculate the cell-wise and contact-wise expression value take long time==================
+    #     configs = []
 
-        for file_path in this_embryo_segmented_files:
-            # config_tmp['time_point'] = tp
-            configs.append([file_path, specific_labeling_3D_path, stat_path])
-        mp_cpu_num = min(len(configs), mp.cpu_count() // 2 + 1)
+    #     for file_path in this_embryo_segmented_files:
+    #         # config_tmp['time_point'] = tp
+    #         configs.append([file_path, specific_labeling_3D_path, stat_path])
+    #     mp_cpu_num = min(len(configs), mp.cpu_count() // 2 + 1)
 
-        # mp_cpu_num = min(len(configs), 1)
+    #     # mp_cpu_num = min(len(configs), 1)
 
-        mpPool = mp.Pool(mp_cpu_num)
-        print('total ', mp.cpu_count(), 'cpu, we create ', mp_cpu_num)
-        for idx_, _ in enumerate(
-                tqdm(mpPool.imap_unordered(calculate_volume_surface_contactwise_expression, configs),
-                     total=len(this_embryo_segmented_files),
-                     desc="calculating {} segmentations (cell and contact expression)".format(embryo_name))):
-            pass
-        # =============================================================================================
+    #     mpPool = mp.Pool(mp_cpu_num)
+    #     print('total ', mp.cpu_count(), 'cpu, we create ', mp_cpu_num)
+    #     for idx_, _ in enumerate(
+    #             tqdm(mpPool.imap_unordered(calculate_volume_surface_contactwise_expression, configs),
+    #                  total=len(this_embryo_segmented_files),
+    #                  desc="calculating {} segmentations (cell and contact expression)".format(embryo_name))):
+    #         pass
+    #     # =============================================================================================
 
-        # ===============================just group them into readable csv===============================
-        save_expression_to_readable_file(name_dictionary_path, embryo_name, max_time,
-                                         cd_file_root_path,
-                                         # os.path.join(annotated_root_path, embryo_name),
-                                         stat_path)
-        # ===============================================================================================
-    # =================================================================================================================
+    #     # ===============================just group them into readable csv===============================
+    #     save_expression_to_readable_file(name_dictionary_path, embryo_name, max_time,
+    #                                      cd_file_root_path,
+    #                                      # os.path.join(annotated_root_path, embryo_name),
+    #                                      stat_path)
+    #     # ===============================================================================================
+    # # =================================================================================================================
+
+    # ===============================just group them into readable csv===============================
+    name_dictionary_path = r"E:\zelinli\Zelin OneDrive - City University of Hong Kong - Student\Documents\06paper TUNETr TMI LSA NC\Tables\name_dictionary.csv"   # 改成你的实际路径
+    cd_file_root_path = r"E:\zelinli\Zelin OneDrive - City University of Hong Kong - Student\Documents\06paper TUNETr TMI LSA NC\Tables\Nuclei_independent_cd_files"  # 改成你的实际路径
+    stat_file_root = r"C:\Users\User\Desktop\ExpressionStat"
+
+    embryo_names = [d for d in os.listdir(stat_file_root) if os.path.isdir(os.path.join(stat_file_root, d))]
+
+    for embryo_name in sorted(embryo_names):
+        embryo_dir = os.path.join(stat_file_root, embryo_name)
+        max_time = len(glob(os.path.join(embryo_dir, f"{embryo_name}_*_surfacewise_expression.txt")))
+        if max_time == 0:
+            print(f"skip {embryo_name} (no timepoint files)")
+            continue
+        save_expression_to_readable_file(
+            name_dictionary_path,
+            embryo_name,
+            max_time,
+            cd_file_root_path,
+            stat_file_root
+        )
+        print("assembled", embryo_name)
+    # ==================================================================================================
