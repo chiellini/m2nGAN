@@ -65,6 +65,58 @@ python 3dniigz_to_2dtif.py
 
 The exporter is restart-safe: existing TIFFs are skipped and reported. Before starting lineage tracing, check one time point visually and confirm that (1) the TIFF dimensions equal the configured X/Y values, (2) there are exactly Z pages, (3) page numbering runs from `p01` to `pZZ`, and (4) the slice order aligns with the raw membrane stack.
 
+## Fluorescence quantification
+
+[`calculate_cellular_expression.py`](calculate_cellular_expression.py) measures the fluorescence signal of a protein of interest in every segmented cell at every time point. All paths are given on the command line.
+
+### Inputs
+
+| Input | Location and naming | Needed |
+| --- | --- | --- |
+| Cell segmentation | `<seg-root>/<embryo>/SegCell/<embryo>_<tp>_segCell.nii.gz` | always |
+| Fluorescence image | `<expression-root>/<embryo>/Gene/<embryo>_<tp>_expression.nii.gz` | always |
+| Lineage file | `<cd-root>/CD<embryo>.csv` | only for cell-name columns |
+| Name dictionary | `name_dictionary.csv` (segmentation label to cell name) | only for cell-name columns |
+
+- `<tp>` is the zero-padded time point (`001`, `002`, ...), numbered consecutively from `001`.
+- The segmentation and the fluorescence image of a time point must have the same shape.
+- The segmentations are the output of the cell segmentation pipeline ([CTransformer](https://github.com/chiellini/CTransformer)). If they are stored in a folder other than `SegCell`, pass `--seg-dir-name`.
+- The lineage file and the name dictionary are optional. They are only used to label the output columns with cell names.
+
+### Run
+
+```bash
+# Columns labelled with cell names
+python calculate_cellular_expression.py \
+    --seg-root /path/to/segmentation \
+    --expression-root /path/to/expression \
+    --cd-root /path/to/CDFiles \
+    --name-dictionary /path/to/name_dictionary.csv \
+    --output /path/to/ExpressionStat
+
+# No lineage files: columns labelled with segmentation labels
+python calculate_cellular_expression.py \
+    --seg-root /path/to/segmentation \
+    --expression-root /path/to/expression \
+    --output /path/to/ExpressionStat
+```
+
+Optional arguments: `--embryo NAME` (repeatable; default is every embryo under `--seg-root`), `--workers N` for parallel processing, and `--assemble-only` to rebuild the tables from existing intermediate results. The script checks that all input files exist before the calculation starts.
+
+### Outputs
+
+Three tables per embryo are written to `--output`. Rows are time points.
+
+| File | Content |
+| --- | --- |
+| `<embryo>_cellwise_expression.csv` | Summed fluorescence intensity within each cell. |
+| `<embryo>_surfacewise_expression.csv` | Summed fluorescence intensity in the shell around each cell surface. |
+| `<embryo>_contactwise_expression.csv` | Summed fluorescence intensity at each cell-cell contact (two header rows, `cell1` and `cell2`). |
+
+Without lineage files the three tables end in `_by_label.csv`; cells are identified by segmentation label and contacts by `<label1>_<label2>`. Per-time-point intermediate results are kept in `<output>/<embryo>/`.
+
+Expected outputs: the tables obtained for three embryos (`200710hmr1plc1p1`, `200710hmr1plc1p2`, `200710hmr1plc1p3`) are provided in [`Data/HMR1StyleExpressionStatHMR1/`](Data/HMR1StyleExpressionStatHMR1).
+
 ## Main project scripts
 
 | Script | Purpose |
@@ -73,7 +125,7 @@ The exporter is restart-safe: existing TIFFs are skipped and reported. Before st
 | `test.py` | Run patch-based inference on a 3D input. |
 | `process_for_m2nGAN.py` | Prepare 3D training/testing volumes from segmentation data. |
 | `3dniigz_to_2dtif.py` | **Required bridge** from predicted 3D NIfTI volumes to 2D TIFF lineage inputs. |
-| `calculate_cellular_expression.py` | Compute cell-level expression measurements. |
+| `calculate_cellular_expression.py` | Quantify per-cell, cell-surface and cell-contact fluorescence (see [Fluorescence quantification](#fluorescence-quantification)). |
 | `generate_lineage_tree_files.py` | Generate lineage-tree files. |
 
 ## Notes for future changes

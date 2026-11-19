@@ -1,3 +1,4 @@
+import argparse
 import pandas as pd
 import os
 import time
@@ -228,75 +229,98 @@ def calculate_volume_surface_contactwise_expression(config):
     # -------------------------------------------------------------------------------------------------------
 
 
+def save_expression_by_label(embryo_name, running_max_time, stat_file_root):
+    """Assemble the per-time-point results into tables whose columns are segmentation labels.
+
+    Used when no lineage file / name dictionary is given, so cell names are not required.
+    """
+    path_tmp = os.path.join(stat_file_root, embryo_name)
+    for kind in ('cellwise', 'surfacewise', 'contactwise'):
+        rows = {}
+        for tp in range(1, running_max_time + 1):
+            file_path = os.path.join(path_tmp, '{}_{}_{}_expression.txt'.format(embryo_name, str(tp).zfill(3), kind))
+            with open(file_path, 'rb') as handle:
+                rows[tp] = {str(key): float(value) for key, value in pickle.load(handle).items()}
+        table = pd.DataFrame.from_dict(rows, orient='index')
+        table = table[sorted(table.columns, key=lambda c: [int(x) for x in c.split('_')])]
+        table.index.name = 'time_point'
+        table.to_csv(os.path.join(stat_file_root, '{}_{}_expression_by_label.csv'.format(embryo_name, kind)))
+
+
+def parse_args():
+    parser = argparse.ArgumentParser(
+        description='Per-cell, cell-surface and cell-contact fluorescence quantification.')
+    parser.add_argument('--seg-root', required=True,
+                        help='Folder with <embryo>/<seg-dir-name>/<embryo>_<tp>_segCell.nii.gz')
+    parser.add_argument('--seg-dir-name', default='SegCell',
+                        help='Per-embryo folder holding the named-cell segmentations (default SegCell)')
+    parser.add_argument('--expression-root', required=True,
+                        help='Folder with <embryo>/Gene/<embryo>_<tp>_expression.nii.gz')
+    parser.add_argument('--cd-root', default=None,
+                        help='Optional. Folder with CD<embryo>.csv (lineage file), for cell-name columns')
+    parser.add_argument('--name-dictionary', default=None,
+                        help='Optional. name_dictionary.csv mapping segmentation labels to cell names')
+    parser.add_argument('--output', required=True, help='Output folder for the expression tables')
+    parser.add_argument('--embryo', action='append',
+                        help='Embryo name; may be repeated. Default: every embryo under --seg-root')
+    parser.add_argument('--workers', type=int, default=1, help='Number of parallel processes (default 1)')
+    parser.add_argument('--assemble-only', action='store_true',
+                        help='Skip the calculation; only assemble existing intermediate files into CSV tables')
+    return parser.parse_args()
+
+
 if __name__ == '__main__':
-    # is_generate_cell_wise_gui_data= True # depulicate all raw images and segmented files for ITK-SNAP-CVE software
+    args = parse_args()
+    if (args.cd_root is None) != (args.name_dictionary is None):
+        raise SystemExit('Give both --cd-root and --name-dictionary (cell-name tables), or neither (label tables).')
+    use_cell_names = args.cd_root is not None
+    if use_cell_names and not os.path.isfile(args.name_dictionary):
+        raise SystemExit('Name dictionary not found: {}'.format(args.name_dictionary))
+    os.makedirs(args.output, exist_ok=True)
 
-    # # =====================calculate expression volume surface contact=====================================
-    # embryo_names = ['200710hmr1plc1p1', '200710hmr1plc1p2', '200710hmr1plc1p3']
+    embryo_names = args.embryo or sorted(
+        d for d in os.listdir(args.seg_root)
+        if os.path.isdir(os.path.join(args.seg_root, d, args.seg_dir_name)))
+    if not embryo_names:
+        raise SystemExit('No <embryo>/{} folders found under {}'.format(args.seg_dir_name, args.seg_root))
 
-    # cell_identity_assigned_path = r'C:\Users\zelinli6\OneDrive - City University of Hong Kong - Student\Documents\06paper TUNETr TMI LSA NC\TUNETr dataset\CTransformer embryos segmentation'
-    # cd_file_root_path = r'C:\Users\zelinli6\OneDrive - City University of Hong Kong - Student\Documents\06paper TUNETr TMI LSA NC\Tables\Nuclei_independent_cd_files'
-    # name_dictionary_path = r'C:\Users\zelinli6\OneDrive - City University of Hong Kong - Student\Documents\06paper TUNETr TMI LSA NC\Tables\name_dictionary.csv'
-    # # cell_fate_dictionary = r'/home/cimda/INNERDisk1/ZELIN_MEMB_DATA/CMap CSahepr 34 packed membrane nucleus/CellFate.xls'
-
-    # specific_labeling_3D_path = r'E:\ProjectData\MembraneProject\AllRawDataPacked'
-
-    # stat_path = os.path.join(cell_identity_assigned_path, 'ExpressionStat')
-
-    # label_name_dict = pd.read_csv(name_dictionary_path, index_col=0).to_dict()['0']
-    # name_label_dict = {value: key for key, value in label_name_dict.items()}
-
-    # for idx, embryo_name in enumerate(embryo_names):
-    #     this_embryo_segmented_files = sorted(
-    #         glob(os.path.join(cell_identity_assigned_path, embryo_name, 'SegCell', '*nii.gz')))
-    #     max_time = len(this_embryo_segmented_files)
-
-    #     # ==================calculate the cell-wise and contact-wise expression value take long time==================
-    #     configs = []
-
-    #     for file_path in this_embryo_segmented_files:
-    #         # config_tmp['time_point'] = tp
-    #         configs.append([file_path, specific_labeling_3D_path, stat_path])
-    #     mp_cpu_num = min(len(configs), mp.cpu_count() // 2 + 1)
-
-    #     # mp_cpu_num = min(len(configs), 1)
-
-    #     mpPool = mp.Pool(mp_cpu_num)
-    #     print('total ', mp.cpu_count(), 'cpu, we create ', mp_cpu_num)
-    #     for idx_, _ in enumerate(
-    #             tqdm(mpPool.imap_unordered(calculate_volume_surface_contactwise_expression, configs),
-    #                  total=len(this_embryo_segmented_files),
-    #                  desc="calculating {} segmentations (cell and contact expression)".format(embryo_name))):
-    #         pass
-    #     # =============================================================================================
-
-    #     # ===============================just group them into readable csv===============================
-    #     save_expression_to_readable_file(name_dictionary_path, embryo_name, max_time,
-    #                                      cd_file_root_path,
-    #                                      # os.path.join(annotated_root_path, embryo_name),
-    #                                      stat_path)
-    #     # ===============================================================================================
-    # # =================================================================================================================
-
-    # ===============================just group them into readable csv===============================
-    name_dictionary_path = r"E:\zelinli\Zelin OneDrive - City University of Hong Kong - Student\Documents\06paper TUNETr TMI LSA NC\Tables\name_dictionary.csv"   # 改成你的实际路径
-    cd_file_root_path = r"E:\zelinli\Zelin OneDrive - City University of Hong Kong - Student\Documents\06paper TUNETr TMI LSA NC\Tables\Nuclei_independent_cd_files"  # 改成你的实际路径
-    stat_file_root = r"C:\Users\User\Desktop\ExpressionStat"
-
-    embryo_names = [d for d in os.listdir(stat_file_root) if os.path.isdir(os.path.join(stat_file_root, d))]
-
-    for embryo_name in sorted(embryo_names):
-        embryo_dir = os.path.join(stat_file_root, embryo_name)
-        max_time = len(glob(os.path.join(embryo_dir, f"{embryo_name}_*_surfacewise_expression.txt")))
-        if max_time == 0:
-            print(f"skip {embryo_name} (no timepoint files)")
+    for embryo_name in embryo_names:
+        seg_files = sorted(glob(os.path.join(args.seg_root, embryo_name, args.seg_dir_name, '*.nii.gz')))
+        if not seg_files:
+            print('skip {} (no segmentation files)'.format(embryo_name))
             continue
-        save_expression_to_readable_file(
-            name_dictionary_path,
-            embryo_name,
-            max_time,
-            cd_file_root_path,
-            stat_file_root
-        )
-        print("assembled", embryo_name)
-    # ==================================================================================================
+        max_time = len(seg_files)
+        if use_cell_names:
+            cd_file = os.path.join(args.cd_root, 'CD{}.csv'.format(embryo_name))
+            if not os.path.isfile(cd_file):
+                raise SystemExit('Lineage file not found: {}'.format(cd_file))
+
+        if not args.assemble_only:
+            # check every expression image exists before the long calculation starts
+            missing = []
+            for seg_file in seg_files:
+                tp = os.path.basename(seg_file).split('_')[1]
+                expression_file = os.path.join(args.expression_root, embryo_name, 'Gene',
+                                               '{}_{}_expression.nii.gz'.format(embryo_name, tp))
+                if not os.path.isfile(expression_file):
+                    missing.append(expression_file)
+            if missing:
+                raise SystemExit('{} expression image(s) missing, e.g. {}'.format(len(missing), missing[0]))
+
+            configs = [[seg_file, args.expression_root, args.output] for seg_file in seg_files]
+            desc = 'calculating {} expression'.format(embryo_name)
+            if args.workers > 1:
+                with mp.Pool(min(args.workers, len(configs))) as pool:
+                    for _ in tqdm(pool.imap_unordered(calculate_volume_surface_contactwise_expression, configs),
+                                  total=len(configs), desc=desc):
+                        pass
+            else:
+                for config in tqdm(configs, desc=desc):
+                    calculate_volume_surface_contactwise_expression(config)
+
+        # turn the per-time-point results into three tables (rows: time points)
+        if use_cell_names:
+            save_expression_to_readable_file(args.name_dictionary, embryo_name, max_time, args.cd_root, args.output)
+        else:
+            save_expression_by_label(embryo_name, max_time, args.output)
+        print('{}: tables written to {}'.format(embryo_name, args.output))
